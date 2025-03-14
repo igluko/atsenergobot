@@ -83,7 +83,7 @@ func checkMonth(botToken, chatID string) {
 	}
 
 	firstOption := doc.Find("select.form-select.periods option").First()
-	if firstOption == nil || strings.TrimSpace(firstOption.Text()) == "" {
+	if firstOption == nil {
 		if !siteError && chatID != "" {
 			siteError = true
 			sendTelegramMessage(botToken, chatID, "Не удалось найти текущий месяц на сайте.")
@@ -92,13 +92,23 @@ func checkMonth(botToken, chatID string) {
 	}
 
 	newMonth := strings.TrimSpace(firstOption.Text())
+	if newMonth == "" {
+		if !siteError && chatID != "" {
+			siteError = true
+			sendTelegramMessage(botToken, chatID, "Не удалось определить значение первого месяца.")
+		}
+		return
+	}
 
 	if siteError && chatID != "" {
 		siteError = false
-		sendTelegramMessage(botToken, chatID, fmt.Sprintf("Сайт восстановился, текущий месяц: %s", newMonth))
-	}
-
-	if newMonth != lastMonth {
+		if newMonth != lastMonth {
+			lastMonth = newMonth
+			sendTelegramMessage(botToken, chatID, fmt.Sprintf("Сайт восстановился, текущий месяц обновился до: %s", newMonth))
+		} else {
+			sendTelegramMessage(botToken, chatID, fmt.Sprintf("Сайт восстановился, текущий месяц: %s", newMonth))
+		}
+	} else if newMonth != lastMonth {
 		lastMonth = newMonth
 		if chatID != "" {
 			sendTelegramMessage(botToken, chatID, "Обнаружен новый месяц: "+newMonth)
@@ -115,15 +125,20 @@ func listenForMessages(botToken string) {
 			time.Sleep(5 * time.Second)
 			continue
 		}
+
 		for _, update := range resp.Result {
 			offset = update.UpdateID + 1
 			if update.Message == nil {
 				continue
 			}
 			chatID := update.Message.Chat.ID
-			sendTelegramMessage(botToken, strconv.FormatInt(chatID, 10),
-				fmt.Sprintf("User ID: %d, Chat ID: %d", chatID, chatID))
+			sendTelegramMessage(
+				botToken,
+				strconv.FormatInt(chatID, 10),
+				fmt.Sprintf("User ID: %d, Chat ID: %d", chatID, chatID),
+			)
 		}
+
 		time.Sleep(2 * time.Second)
 	}
 }
@@ -138,16 +153,17 @@ func getUpdates(botToken string, offset int64) (*TGUpdateResponse, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
 	var updates TGUpdateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&updates); err != nil {
 		return nil, err
 	}
+
 	return &updates, nil
 }
 
 func sendTelegramMessage(botToken, chatID, text string) {
 	msg := url.QueryEscape(text)
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
-		botToken, chatID, msg)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s", botToken, chatID, msg)
 	_, _ = http.Get(url)
 }
